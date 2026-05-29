@@ -1,0 +1,80 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-debug:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build debug APK
+        run: nix run --print-build-logs .#build-debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: symfonium-lyric-provider-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish tagged release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build release APK
+        run: nix run --print-build-logs .#build-release
+
+      - name: Collect release APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk dist/
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symfonium-lyric-provider-release-${{ github.ref_name }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" dist/*.apk --clobber
+          else
+            gh release create "$TAG_NAME" dist/*.apk --title "$TAG_NAME" --generate-notes
+          fi
