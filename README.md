@@ -47,6 +47,4 @@ For manual Gradle work, enter the same environment with:
 nix develop
 ```
 
-GitHub Actions uses the same flake commands. Pushes and pull requests build the debug APK as an artifact; pushed tags also build release APKs and attach them to the matching GitHub Release.
-
 Do not assume an existing APK under `app/build/` reflects the latest source changes unless the corresponding build command has been run after those changes.
