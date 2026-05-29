@@ -2,6 +2,8 @@
 
 Xposed/LSPosed module that exports Symfonium realtime lyrics to [Lyricon](https://github.com/tomakino/lyricon).
 
+Tested against Symfonium 15.0.0B2, but this module tries to detect Symfonium's internal data structures dynamically, and should hopefully work with other versions as well.
+
 > [!WARNING]
 > This module is mostly vibe coded. I have inspected its logic and it works for me, but use at your own risk.
 
@@ -46,5 +48,7 @@ For manual Gradle work, enter the same environment with:
 ```bash
 nix develop
 ```
+
+GitHub Actions does not use Nix. It uses standard GitHub-hosted runner Java, Gradle, and Android SDK tooling to build debug APK artifacts for pushes and pull requests. Pushed tags build release APKs and attach them to the matching GitHub Release.
 
 Do not assume an existing APK under `app/build/` reflects the latest source changes unless the corresponding build command has been run after those changes.

@@ -11,6 +11,9 @@ This project is an Xposed/LSPosed module that extracts realtime lyrics from the 
 ## Source Structure
 
 ```text
+.github/workflows/ci.yml
+  GitHub Actions workflow: debug APK artifacts for commits/PRs, release APK assets for pushed tags.
+
 app/src/main/java/pub/lantian/symfoniumlyricprovider/
   HookEntry.java    Xposed entry point, Lyricon Provider initialization, MediaSession hooks, current renderer-state discovery
   MediaStateHeuristics.java  current renderer-state and playable-media structure detection
@@ -60,6 +63,8 @@ Use the Nix dev shell for manual Android and Gradle tooling:
 ```bash
 nix develop
 ```
+
+CI intentionally does not use Nix because resolving the Android SDK closure is slow on GitHub-hosted runners. `.github/workflows/ci.yml` uses standard GitHub Actions Java, Gradle, and Android SDK tooling: commits and pull requests run `gradle --no-daemon :app:assembleDebug`; pushed tags run `gradle --no-daemon :app:assembleRelease` and upload the release APKs to the matching GitHub Release.
 
 Do not start an APK build unless the user explicitly asks for it. For ordinary refactors or documentation edits, prefer source inspection with `rg` and targeted file reads.
 
