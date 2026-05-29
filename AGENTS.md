@@ -64,7 +64,7 @@ Use the Nix dev shell for manual Android and Gradle tooling:
 nix develop
 ```
 
-CI intentionally does not use Nix because resolving the Android SDK closure is slow on GitHub-hosted runners. `.github/workflows/ci.yml` uses standard GitHub Actions Java, Gradle, and Android SDK tooling: commits and pull requests run `gradle --no-daemon :app:assembleDebug`; pushed tags run `gradle --no-daemon :app:assembleRelease` and upload the release APKs to the matching GitHub Release.
+CI intentionally does not use Nix because resolving the Android SDK closure is slow on GitHub-hosted runners. `.github/workflows/ci.yml` uses standard GitHub Actions Java and Gradle tooling plus `android-actions/setup-android` for Android SDK package installation: commits and pull requests run `gradle --no-daemon :app:assembleDebug`; pushed tags run `gradle --no-daemon :app:assembleRelease` and upload the release APKs to the matching GitHub Release.
 
 Do not start an APK build unless the user explicitly asks for it. For ordinary refactors or documentation edits, prefer source inspection with `rg` and targeted file reads.
 
