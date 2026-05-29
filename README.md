@@ -15,7 +15,9 @@ Xposed/LSPosed module that exports Symfonium realtime lyrics to [Lyricon](https:
 
 - Playback state is mirrored from `android.media.session.MediaSession#setPlaybackState`.
 - Track metadata is mirrored from `android.media.session.MediaSession#setMetadata`.
-- Lyrics are discovered by scanning Symfonium dex classes for the runtime structure of its lyric container instead of hard-coding obfuscated class names.
+- Lyrics are discovered from Symfonium's current renderer-state object, then deduced from that object's current playable-media field. `MediaStateHeuristics` owns that structure detection. This avoids publishing lyrics that Symfonium parsed for a preloaded next song.
+- Renderer state, playable media, lyric containers, lyric lines, and cues are detected by runtime structure instead of hard-coding obfuscated class names.
+- Structural scans use shared safe reflection helpers, so candidate classes with unresolved field types are skipped instead of breaking hook installation.
 - Lyric lines and word cues are mapped reflectively by field type and runtime value shape, then converted to Lyricon's `RichLyricLine` and `LyricWord` models.
 
 ## Build on NixOS

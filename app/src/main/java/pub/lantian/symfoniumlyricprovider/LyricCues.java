@@ -1,7 +1,6 @@
 package pub.lantian.symfoniumlyricprovider;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -59,8 +58,8 @@ final class LyricCues {
 
         List<Field> intFields = new ArrayList<>();
         List<Field> integerFields = new ArrayList<>();
-        for (Field field : instanceFields(rawCue.getClass())) {
-            Class<?> type = field.getType();
+        for (Field field : ReflectionAccess.instanceFields(rawCue.getClass())) {
+            Class<?> type = ReflectionAccess.fieldType(field);
             if (type == int.class) {
                 intFields.add(field);
             } else if (type == Integer.class) {
@@ -246,40 +245,13 @@ final class LyricCues {
         return score;
     }
 
-    private static List<Field> instanceFields(Class<?> type) {
-        ArrayList<Field> fields = new ArrayList<>();
-        Class<?> current = type;
-        while (current != null && current != Object.class) {
-            for (Field field : current.getDeclaredFields()) {
-                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
-                    continue;
-                }
-                try {
-                    field.setAccessible(true);
-                } catch (Throwable ignored) {
-                }
-                fields.add(field);
-            }
-            current = current.getSuperclass();
-        }
-        return fields;
-    }
-
-    private static Object fieldValue(Field field, Object instance) {
-        try {
-            return field.get(instance);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
     private static int intFieldValue(Field field, Object instance, int fallback) {
-        Object value = fieldValue(field, instance);
+        Object value = ReflectionAccess.fieldValue(field, instance);
         return value instanceof Number ? ((Number) value).intValue() : fallback;
     }
 
     private static Integer integerFieldValue(Field field, Object instance) {
-        Object value = fieldValue(field, instance);
+        Object value = ReflectionAccess.fieldValue(field, instance);
         return value instanceof Number ? ((Number) value).intValue() : null;
     }
 

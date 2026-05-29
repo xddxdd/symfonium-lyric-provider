@@ -8,10 +8,7 @@ import android.os.Build;
 import android.util.Log;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -163,24 +160,29 @@ public final class HookEntry implements IXposedHookLoadPackage {
 
     private static void hookSymfoniumLyrics(ClassLoader classLoader, String apkPath) {
         /*
-         * Symfonium's lyric classes are obfuscated, so class names like lr5/jr5/ir5
-         * are intentionally not used here. Instead, every app dex class is scanned
-         * and only classes with the same structural shape as the lyric container are
-         * hooked:
+         * Symfonium can parse lyrics for queue items before they start playing. Raw
+         * lyric constructors are therefore not a safe publish point: the same model
+         * shape appears for both the current item and preloaded items.
          *
-         * - a small concrete class
-         * - exactly one List field, expected to hold lyric lines
-         * - several boolean state flags, such as synchronized/has-cues markers
-         * - one String field, usually a lyric hash/signature
-         * - a constructor that accepts the line list
+         * Instead this scan hooks the current renderer state object. In the current
+         * Symfonium APK that object is vd9 and contains one current playable-media
+         * field. That playable-media object is fp7 and carries both MediaItem and a
+         * List of parsed Lyrics. Both class names are obfuscated, so the hook finds
+         * the objects by runtime shape:
          *
-         * Future obfuscation can rename all classes and fields, but this shape tends
-         * to remain stable as long as the underlying lyric model stays equivalent.
+         * - renderer state: playback booleans, position/duration longs, volume ints,
+         *   speed floats, and exactly one playable-media field
+         * - playable media: Parcelable/Serializable object with one MediaItem field
+         *   and one to three List fields, one of which contains Lyrics
+         *
+         * This follows the object Symfonium marks as currently playing, so preloaded
+         * lyrics for the next song can exist without being sent under the current
+         * MediaSession metadata.
          */
-        int hooked = 0;
+        int hookedStates = 0;
         for (String className : enumerateClassNames(classLoader, apkPath)) {
             Class<?> candidate = loadClass(classLoader, className);
-            if (candidate == null || !isPotentialLyricsContainerClass(candidate)) {
+            if (candidate == null || !MediaStateHeuristics.isCurrentMediaStateClass(candidate)) {
                 continue;
             }
 
@@ -188,17 +190,15 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 XposedBridge.hookAllConstructors(candidate, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (hasTrackContext()) {
-                            onLyricsObject(param.thisObject, param.thisObject.getClass().getName() + ".constructor");
-                        }
+                        onCurrentMediaState(param.thisObject, param.thisObject.getClass().getName() + ".constructor");
                     }
                 });
-                hooked++;
+                hookedStates++;
             } catch (Throwable t) {
-                log("failed to hook structural lyric candidate " + className, t);
+                log("failed to hook current media state candidate " + className, t);
             }
         }
-        log("hooked " + hooked + " structural lyric candidate(s)");
+        log("hooked " + hookedStates + " current media state candidate(s)");
     }
 
     private static Set<String> enumerateClassNames(ClassLoader classLoader, String apkPath) {
@@ -288,61 +288,6 @@ public final class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static boolean isPotentialLyricsContainerClass(Class<?> candidate) {
-        /*
-         * This filter is deliberately based on field/constructor shape instead of
-         * symbols. It should match Symfonium's current Lyrics object but reject most
-         * unrelated data classes before we hook constructors.
-         */
-        int modifiers = candidate.getModifiers();
-        if (candidate.isAnnotation()
-                || candidate.isAnonymousClass()
-                || candidate.isArray()
-                || candidate.isEnum()
-                || candidate.isInterface()
-                || candidate.isPrimitive()
-                || Modifier.isAbstract(modifiers)) {
-            return false;
-        }
-
-        List<Field> fields = instanceFields(candidate);
-        int listFields = 0;
-        int booleanFields = 0;
-        int stringFields = 0;
-        for (Field field : fields) {
-            Class<?> type = field.getType();
-            if (List.class.isAssignableFrom(type)) {
-                listFields++;
-            } else if (type == boolean.class || type == Boolean.class) {
-                booleanFields++;
-            } else if (type == String.class) {
-                stringFields++;
-            }
-        }
-
-        return fields.size() <= 8
-                && listFields == 1
-                && booleanFields >= 2
-                && booleanFields <= 4
-                && stringFields >= 1
-                && hasListConstructor(candidate);
-    }
-
-    private static boolean hasListConstructor(Class<?> candidate) {
-        // The lyric container is built from the parsed line list.
-        for (Constructor<?> constructor : candidate.getDeclaredConstructors()) {
-            Class<?>[] parameterTypes = constructor.getParameterTypes();
-            if (parameterTypes.length == 1 && List.class.isAssignableFrom(parameterTypes[0])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasTrackContext() {
-        return !isBlank(currentId) || !isBlank(currentTitle) || !isBlank(currentArtist);
-    }
-
     private static void initProvider(Application app) {
         if (provider != null) {
             return;
@@ -413,34 +358,67 @@ public final class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static void onLyricsObject(Object lyricsObject, String source) {
-        if (lyricsObject == null) {
+    private static void onCurrentMediaState(Object state, String source) {
+        if (state == null) {
             return;
         }
 
         try {
-            LyricContainerData container = readLyricContainer(lyricsObject);
-            if (container == null) {
+            Object currentMedia = MediaStateHeuristics.currentPlayingMedia(state);
+            if (currentMedia == null) {
                 return;
             }
 
-            String signature = LyricLines.signature(container.signature, container.lines, currentDuration);
-            if (Objects.equals(signature, lastLyricsSignature)) {
-                return;
+            LyricContainerData container = findBestLyricContainer(currentMedia);
+            if (container != null) {
+                applyLyrics(container, source);
             }
-
-            List<RichLyricLine> converted = LyricLines.convert(container.lines, currentDuration);
-            if (converted.isEmpty()) {
-                return;
-            }
-
-            currentLyrics = converted;
-            lastLyricsSignature = signature;
-            sendCurrentSong();
-            log("sent " + converted.size() + " lyric lines from " + source);
         } catch (Throwable t) {
-            log("failed to process Symfonium lyrics", t);
+            log("failed to process current media state", t);
         }
+    }
+
+    private static LyricContainerData findBestLyricContainer(Object currentMedia) {
+        LyricContainerData best = null;
+        int bestScore = 0;
+        for (Field field : ReflectionAccess.instanceFields(currentMedia.getClass())) {
+            Object value = ReflectionAccess.fieldValue(field, currentMedia);
+            if (!(value instanceof List)) {
+                continue;
+            }
+
+            for (Object possibleLyrics : (List<?>) value) {
+                LyricContainerData container = readLyricContainer(possibleLyrics);
+                if (container == null) {
+                    continue;
+                }
+
+                int score = LyricLines.selectionScore(container.lines, currentDuration);
+                if (score > bestScore) {
+                    best = container;
+                    bestScore = score;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static boolean applyLyrics(LyricContainerData container, String source) {
+        String signature = LyricLines.signature(container.signature, container.lines, currentDuration);
+        if (Objects.equals(signature, lastLyricsSignature)) {
+            return false;
+        }
+
+        List<RichLyricLine> converted = LyricLines.convert(container.lines, currentDuration);
+        if (converted.isEmpty()) {
+            return false;
+        }
+
+        currentLyrics = converted;
+        lastLyricsSignature = signature;
+        sendCurrentSong();
+        log("sent " + converted.size() + " lyric lines from current media state " + source);
+        return true;
     }
 
     private static LyricContainerData readLyricContainer(Object lyricsObject) {
@@ -451,17 +429,21 @@ public final class HookEntry implements IXposedHookLoadPackage {
          * signature; if it disappears or changes type after obfuscation, a signature
          * is rebuilt from line/cue contents later.
          */
+        if (lyricsObject == null) {
+            return null;
+        }
+
         Object signature = null;
-        List<Field> fields = instanceFields(lyricsObject.getClass());
+        List<Field> fields = ReflectionAccess.instanceFields(lyricsObject.getClass());
         for (Field field : fields) {
-            Object value = fieldValue(field, lyricsObject);
+            Object value = ReflectionAccess.fieldValue(field, lyricsObject);
             if (signature == null && value instanceof String && !isBlank((String) value)) {
                 signature = value;
             }
         }
 
         for (Field field : fields) {
-            Object value = fieldValue(field, lyricsObject);
+            Object value = ReflectionAccess.fieldValue(field, lyricsObject);
             if (value instanceof List && LyricLines.isLineList((List<?>) value, currentDuration)) {
                 return new LyricContainerData((List<?>) value, signature);
             }
@@ -485,34 +467,6 @@ public final class HookEntry implements IXposedHookLoadPackage {
 
     private static RemotePlayer player() {
         return provider != null ? provider.getPlayer() : null;
-    }
-
-    private static List<Field> instanceFields(Class<?> type) {
-        // Reflection is centralized so inherited instance fields are handled uniformly.
-        ArrayList<Field> fields = new ArrayList<>();
-        Class<?> current = type;
-        while (current != null && current != Object.class) {
-            for (Field field : current.getDeclaredFields()) {
-                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
-                    continue;
-                }
-                try {
-                    field.setAccessible(true);
-                } catch (Throwable ignored) {
-                }
-                fields.add(field);
-            }
-            current = current.getSuperclass();
-        }
-        return fields;
-    }
-
-    private static Object fieldValue(Field field, Object instance) {
-        try {
-            return field.get(instance);
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     private static String firstNonBlank(String... values) {

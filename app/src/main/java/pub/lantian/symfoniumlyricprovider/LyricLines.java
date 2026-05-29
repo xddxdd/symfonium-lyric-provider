@@ -1,7 +1,6 @@
 package pub.lantian.symfoniumlyricprovider;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -113,6 +112,40 @@ final class LyricLines {
         return result;
     }
 
+    static int selectionScore(List<?> rawLines, long currentDuration) {
+        /*
+         * A current playable media object can carry multiple lyric candidates.
+         * Symfonium's own selector prefers richer lyrics, roughly: word-cued lyrics,
+         * then line-synchronized lyrics, then the candidate with more lines. We use
+         * the same runtime structure instead of class or field names so the selected
+         * object remains stable when obfuscation changes.
+         */
+        int readableLines = 0;
+        int timedLines = 0;
+        int cueLines = 0;
+        for (Object rawLine : rawLines) {
+            Line line = read(rawLine, currentDuration);
+            if (line == null || isBlank(line.text)) {
+                continue;
+            }
+
+            readableLines++;
+            if (line.begin > 0) {
+                timedLines++;
+            }
+            if (line.cues != null && !line.cues.isEmpty()) {
+                cueLines++;
+            }
+        }
+
+        if (readableLines == 0) {
+            return 0;
+        }
+        return (cueLines > 0 ? 1000000 : 0)
+                + (timedLines > 0 ? 100000 : 0)
+                + readableLines;
+    }
+
     private static Line read(Object rawLine, long currentDuration) {
         /*
          * Line fields are discovered structurally:
@@ -129,13 +162,13 @@ final class LyricLines {
         List<Field> stringFields = new ArrayList<>();
         List<Field> listFields = new ArrayList<>();
 
-        for (Field field : instanceFields(rawLine.getClass())) {
-            Class<?> type = field.getType();
+        for (Field field : ReflectionAccess.instanceFields(rawLine.getClass())) {
+            Class<?> type = ReflectionAccess.fieldType(field);
             if (type == int.class || type == Integer.class) {
                 intFields.add(field);
             } else if (type == String.class) {
                 stringFields.add(field);
-            } else if (List.class.isAssignableFrom(type)) {
+            } else if (type != null && List.class.isAssignableFrom(type)) {
                 listFields.add(field);
             }
         }
@@ -146,7 +179,7 @@ final class LyricLines {
 
         String text = null;
         for (Field field : stringFields) {
-            Object value = fieldValue(field, rawLine);
+            Object value = ReflectionAccess.fieldValue(field, rawLine);
             if (value != null) {
                 text = String.valueOf(value);
                 break;
@@ -158,7 +191,7 @@ final class LyricLines {
 
         List<?> cues = null;
         for (Field field : listFields) {
-            Object value = fieldValue(field, rawLine);
+            Object value = ReflectionAccess.fieldValue(field, rawLine);
             if (value instanceof List && LyricCues.isCueList((List<?>) value, text.length())) {
                 cues = (List<?>) value;
                 break;
@@ -286,35 +319,8 @@ final class LyricLines {
         return score;
     }
 
-    private static List<Field> instanceFields(Class<?> type) {
-        ArrayList<Field> fields = new ArrayList<>();
-        Class<?> current = type;
-        while (current != null && current != Object.class) {
-            for (Field field : current.getDeclaredFields()) {
-                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
-                    continue;
-                }
-                try {
-                    field.setAccessible(true);
-                } catch (Throwable ignored) {
-                }
-                fields.add(field);
-            }
-            current = current.getSuperclass();
-        }
-        return fields;
-    }
-
-    private static Object fieldValue(Field field, Object instance) {
-        try {
-            return field.get(instance);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
     private static int intFieldValue(Field field, Object instance, int fallback) {
-        Object value = fieldValue(field, instance);
+        Object value = ReflectionAccess.fieldValue(field, instance);
         return value instanceof Number ? ((Number) value).intValue() : fallback;
     }
 

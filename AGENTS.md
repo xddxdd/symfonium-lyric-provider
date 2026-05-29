@@ -12,8 +12,10 @@ This project is an Xposed/LSPosed module that extracts realtime lyrics from the 
 
 ```text
 app/src/main/java/pub/lantian/symfoniumlyricprovider/
-  HookEntry.java    Xposed entry point, Lyricon Provider initialization, MediaSession hooks, lyric container discovery
-  LyricLines.java   lyric line structure detection, line timing scoring, signature generation, RichLyricLine conversion
+  HookEntry.java    Xposed entry point, Lyricon Provider initialization, MediaSession hooks, current renderer-state discovery
+  MediaStateHeuristics.java  current renderer-state and playable-media structure detection
+  ReflectionAccess.java  shared safe reflection helpers for structural scans
+  LyricLines.java   lyric line structure detection, line timing scoring, lyric candidate selection, signature generation, RichLyricLine conversion
   LyricCues.java    Cue structure detection, char range and timing scoring, LyricWord conversion
 
 app/src/main/assets/xposed_init
@@ -28,11 +30,17 @@ app/build/
 
 ## Implementation Details
 
-`HookEntry` owns the outer flow: target process filtering, Lyricon Provider initialization, hooks for `MediaSession#setMetadata` and `MediaSession#setPlaybackState`, and dex scanning to find Symfonium lyric container objects.
+`HookEntry` owns the outer flow: target process filtering, Lyricon Provider initialization, hooks for `MediaSession#setMetadata` and `MediaSession#setPlaybackState`, and dex scanning to hook Symfonium's current renderer-state object.
 
-Lyric containers, lyric lines, and cues are detected structurally rather than by the obfuscated class names found in the current Symfonium APK. This keeps the hook resilient when R8/ProGuard renames classes or fields, as long as the underlying data model keeps the same runtime shape.
+`MediaStateHeuristics` owns current renderer-state and playable-media detection. It detects the state object by its playback-state field shape, then extracts the current playable-media object that contains both the stable `MediaItem` model and parsed lyric candidates.
 
-`LyricLines` owns all lyric-line logic, including deciding whether a `List<?>` looks like a lyric line list, reading line text and timing, generating duplicate-prevention signatures, normalizing missing line end times, and converting to Lyricon's `RichLyricLine`.
+Lyrics are not published from raw lyric constructors because Symfonium may construct lyrics for preloaded queue items before playback reaches them. Instead, `HookEntry` hooks the current renderer-state shape, reads its current playable-media object, and deduces the lyric container from that current playable object. This keeps lyrics tied to the object Symfonium marks as currently playing.
+
+Renderer state, playable media, lyric containers, lyric lines, and cues are detected structurally rather than by the obfuscated class names found in the current Symfonium APK. This keeps the hook resilient when R8/ProGuard renames classes or fields, as long as the underlying data model keeps the same runtime shape.
+
+`ReflectionAccess` owns shared reflection primitives used by these structural scans. It catches metadata-resolution failures from `getDeclaredFields()` and `Field#getType()` so unrelated candidate classes with missing framework/library references are skipped instead of aborting hook installation.
+
+`LyricLines` owns all lyric-line logic, including deciding whether a `List<?>` looks like a lyric line list, scoring multiple lyric candidates from the current playable-media object, reading line text and timing, generating duplicate-prevention signatures, normalizing missing line end times, and converting to Lyricon's `RichLyricLine`.
 
 `LyricCues` owns all cue logic, including cue list validation, cue start time, optional end time, `charStart`/`charEnd` character ranges, and conversion to Lyricon's `LyricWord`. `charStart` and `charEnd` are substring boundaries into the parent lyric line text.
 
