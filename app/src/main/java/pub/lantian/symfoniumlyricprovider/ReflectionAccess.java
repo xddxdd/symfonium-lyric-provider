@@ -1,4 +1,4 @@
-package io.github.proify.lyricon.symfoniumprovider.xposed;
+package pub.lantian.symfoniumlyricprovider;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;

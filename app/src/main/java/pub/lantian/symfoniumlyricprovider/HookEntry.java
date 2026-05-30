@@ -1,4 +1,4 @@
-package io.github.proify.lyricon.symfoniumprovider.xposed;
+package pub.lantian.symfoniumlyricprovider;
 
 import android.app.Application;
 import android.media.MediaMetadata;
@@ -30,7 +30,7 @@ import io.github.proify.lyricon.provider.RemotePlayer;
 public final class HookEntry implements IXposedHookLoadPackage {
     private static final String TAG = "SymfoniumLyricProvider";
     private static final String TARGET_PACKAGE = "app.symfonik.music.player";
-    private static final String PROVIDER_PACKAGE = "io.github.proify.lyricon.symfoniumprovider";
+    private static final String PROVIDER_PACKAGE = "pub.lantian.symfoniumlyricprovider";
 
     private static volatile LyriconProvider provider;
     private static String trackKey;

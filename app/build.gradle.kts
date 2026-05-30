@@ -3,12 +3,12 @@ plugins {
 }
 
 android {
-    namespace = "io.github.proify.lyricon.symfoniumprovider"
+    namespace = "pub.lantian.symfoniumlyricprovider"
     compileSdk = 36
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "io.github.proify.lyricon.symfoniumprovider"
+        applicationId = "pub.lantian.symfoniumlyricprovider"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

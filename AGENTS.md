@@ -4,8 +4,8 @@
 
 This project is an Xposed/LSPosed module that extracts realtime lyrics from the Symfonium playback process and exposes them through Lyricon Provider for system lyric display components.
 
-- Module package: `io.github.proify.lyricon.symfoniumprovider`
-- Xposed entry point: `io.github.proify.lyricon.symfoniumprovider.xposed.HookEntry`
+- Module package: `pub.lantian.symfoniumlyricprovider`
+- Xposed entry point: `pub.lantian.symfoniumlyricprovider.HookEntry`
 - Target app package: `app.symfonik.music.player`
 
 ## Source Structure
@@ -14,7 +14,7 @@ This project is an Xposed/LSPosed module that extracts realtime lyrics from the 
 .github/workflows/ci.yml
   GitHub Actions workflow: debug APK artifacts for commits/PRs, release APK assets for pushed tags.
 
-app/src/main/java/io/github/proify/lyricon/symfoniumprovider/xposed/
+app/src/main/java/pub/lantian/symfoniumlyricprovider/
   HookEntry.java    Xposed entry point, Lyricon Provider initialization, MediaSession hooks, current renderer-state discovery
   MediaStateHeuristics.java  current renderer-state and playable-media structure detection
   ReflectionAccess.java  shared safe reflection helpers for structural scans
