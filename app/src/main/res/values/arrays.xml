@@ -5,8 +5,6 @@
     </string-array>
 
     <string-array name="lyricon_module_tags">
-        <item>Symfonium</item>
-        <item>Lyrics</item>
-        <item>Lyricon</item>
+        <item>$translation</item>
     </string-array>
 </resources>

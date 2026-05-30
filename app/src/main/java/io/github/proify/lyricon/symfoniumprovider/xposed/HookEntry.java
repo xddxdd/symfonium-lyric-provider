@@ -1,4 +1,4 @@
-package pub.lantian.symfoniumlyricprovider;
+package io.github.proify.lyricon.symfoniumprovider.xposed;
 
 import android.app.Application;
 import android.media.MediaMetadata;
@@ -7,7 +7,6 @@ import android.media.session.PlaybackState;
 import android.os.Build;
 import android.util.Log;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
@@ -31,9 +30,9 @@ import io.github.proify.lyricon.provider.RemotePlayer;
 public final class HookEntry implements IXposedHookLoadPackage {
     private static final String TAG = "SymfoniumLyricProvider";
     private static final String TARGET_PACKAGE = "app.symfonik.music.player";
-    private static final String PROVIDER_PACKAGE = "pub.lantian.symfoniumlyricprovider";
+    private static final String PROVIDER_PACKAGE = "io.github.proify.lyricon.symfoniumprovider";
 
-    private static LyriconProvider provider;
+    private static volatile LyriconProvider provider;
     private static String trackKey;
     private static String currentId;
     private static String currentTitle;
@@ -64,10 +63,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 lpparam.appInfo != null ? lpparam.appInfo.className : null
         );
         hookMediaSession();
-        hookSymfoniumLyrics(
-                lpparam.classLoader,
-                lpparam.appInfo != null ? lpparam.appInfo.sourceDir : null
-        );
+        hookSymfoniumLyrics(lpparam.classLoader);
     }
 
     private static void hookApplication(ClassLoader classLoader, String applicationClassName) {
@@ -158,7 +154,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static void hookSymfoniumLyrics(ClassLoader classLoader, String apkPath) {
+    private static void hookSymfoniumLyrics(ClassLoader classLoader) {
         /*
          * Symfonium can parse lyrics for queue items before they start playing. Raw
          * lyric constructors are therefore not a safe publish point: the same model
@@ -180,7 +176,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
          * MediaSession metadata.
          */
         int hookedStates = 0;
-        for (String className : enumerateClassNames(classLoader, apkPath)) {
+        for (String className : enumerateClassNames(classLoader)) {
             Class<?> candidate = loadClass(classLoader, className);
             if (candidate == null || !MediaStateHeuristics.isCurrentMediaStateClass(candidate)) {
                 continue;
@@ -201,36 +197,10 @@ public final class HookEntry implements IXposedHookLoadPackage {
         log("hooked " + hookedStates + " current media state candidate(s)");
     }
 
-    private static Set<String> enumerateClassNames(ClassLoader classLoader, String apkPath) {
-        /*
-         * Two sources are used for class discovery. appInfo.sourceDir covers the
-         * installed APK path, while the ClassLoader pathList covers split dex entries
-         * and loader-specific dex files. The LinkedHashSet keeps the scan stable and
-         * avoids duplicate hooks when both sources expose the same class.
-         */
+    private static Set<String> enumerateClassNames(ClassLoader classLoader) {
         LinkedHashSet<String> classNames = new LinkedHashSet<>();
-        if (!isBlank(apkPath)) {
-            addDexEntries(apkPath, classNames);
-        }
         addClassLoaderDexEntries(classLoader, classNames);
         return classNames;
-    }
-
-    private static void addDexEntries(String dexPath, Set<String> classNames) {
-        DexFile dexFile = null;
-        try {
-            dexFile = new DexFile(dexPath);
-            addDexEntries(dexFile, classNames);
-        } catch (Throwable t) {
-            log("failed to enumerate apk dex " + dexPath, t);
-        } finally {
-            if (dexFile != null) {
-                try {
-                    dexFile.close();
-                } catch (IOException ignored) {
-                }
-            }
-        }
     }
 
     private static void addClassLoaderDexEntries(ClassLoader classLoader, Set<String> classNames) {
@@ -264,7 +234,8 @@ public final class HookEntry implements IXposedHookLoadPackage {
 
     private static boolean shouldScanClassName(String className) {
         // Keep the expensive structural scan focused on Symfonium/app classes.
-        return !className.startsWith("android.")
+        return !className.contains("$")
+                && !className.startsWith("android.")
                 && !className.startsWith("androidx.")
                 && !className.startsWith("com.google.")
                 && !className.startsWith("com.squareup.")
@@ -276,8 +247,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
                 && !className.startsWith("kotlinx.")
                 && !className.startsWith("okhttp3.")
                 && !className.startsWith("okio.")
-                && !className.startsWith("org.")
-                && !className.startsWith("pub.lantian.");
+                && !className.startsWith("org.");
     }
 
     private static Class<?> loadClass(ClassLoader classLoader, String className) {
@@ -288,7 +258,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static void initProvider(Application app) {
+    private static synchronized void initProvider(Application app) {
         if (provider != null) {
             return;
         }
@@ -312,7 +282,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         log("provider initialized");
     }
 
-    private static void onMetadata(MediaMetadata metadata) {
+    private static synchronized void onMetadata(MediaMetadata metadata) {
         try {
             String title = firstNonBlank(
                     metadata.getString(MediaMetadata.METADATA_KEY_TITLE),
@@ -358,7 +328,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static void onCurrentMediaState(Object state, String source) {
+    private static synchronized void onCurrentMediaState(Object state, String source) {
         if (state == null) {
             return;
         }
@@ -451,7 +421,7 @@ public final class HookEntry implements IXposedHookLoadPackage {
         return null;
     }
 
-    private static void sendCurrentSong() {
+    private static synchronized void sendCurrentSong() {
         RemotePlayer player = player();
         if (player == null) {
             return;

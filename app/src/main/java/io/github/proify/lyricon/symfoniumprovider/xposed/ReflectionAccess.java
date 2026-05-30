@@ -1,15 +1,35 @@
-package pub.lantian.symfoniumlyricprovider;
+package io.github.proify.lyricon.symfoniumprovider.xposed;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class ReflectionAccess {
+    private static final Map<Class<?>, List<Field>> FIELDS_CACHE = new ConcurrentHashMap<>();
+
     private ReflectionAccess() {
     }
 
     static List<Field> instanceFields(Class<?> type) {
+        if (type == null) {
+            return Collections.emptyList();
+        }
+
+        List<Field> cached = FIELDS_CACHE.get(type);
+        if (cached != null) {
+            return cached;
+        }
+
+        List<Field> fields = inspectInstanceFields(type);
+        List<Field> previous = FIELDS_CACHE.putIfAbsent(type, fields);
+        return previous != null ? previous : fields;
+    }
+
+    private static List<Field> inspectInstanceFields(Class<?> type) {
         /*
          * Structural detection scans many unrelated Symfonium classes. Some of
          * those classes reference framework or library types that are not resolvable
@@ -41,7 +61,7 @@ final class ReflectionAccess {
             }
             current = superclass(current);
         }
-        return fields;
+        return Collections.unmodifiableList(fields);
     }
 
     static Class<?> fieldType(Field field) {

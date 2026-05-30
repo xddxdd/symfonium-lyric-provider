@@ -1,4 +1,4 @@
-package pub.lantian.symfoniumlyricprovider;
+package io.github.proify.lyricon.symfoniumprovider.xposed;
 
 import android.os.Parcelable;
 

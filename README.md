@@ -9,8 +9,8 @@ Tested against Symfonium 15.0.0B2, but this module tries to detect Symfonium's i
 
 ## Package
 
-- Application ID / namespace: `pub.lantian.symfoniumlyricprovider`
-- Xposed entry point: `pub.lantian.symfoniumlyricprovider.HookEntry`
+- Application ID / namespace: `io.github.proify.lyricon.symfoniumprovider`
+- Xposed entry point: `io.github.proify.lyricon.symfoniumprovider.xposed.HookEntry`
 - Target package: `app.symfonik.music.player`
 
 ## Hook Summary
